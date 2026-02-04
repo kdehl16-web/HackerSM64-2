@@ -1,6 +1,6 @@
 # Hacker Super Mario 64 2
 
-This repository is a clean slate for basic enhancements built upon the *Super Mario 64* decompilation. It is a spritual successor to CrashOveride95's *UltraSM64*.
+This repository is a clean slate for basic enhancements built upon the *Super Mario 64* decompilation. It is a spritual successor to HackerN64's *HackerSM64*.
 
 ## Quick Start (for Ubuntu)
 
