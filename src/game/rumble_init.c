@@ -7,7 +7,7 @@
 #include "macros.h"
 
 #include "buffers/buffers.h"
-#include "main.h"
+#include "init/main.h"
 #include "rumble_init.h"
 
 FORCE_BSS OSThread gRumblePakThread;
@@ -296,7 +296,7 @@ void cancel_rumble(void) {
 
 void create_thread_6(void) {
     osCreateMesgQueue(&gRumbleThreadVIMesgQueue, &gRumbleThreadVIMesgBuf, 1);
-    osCreateThread(&gRumblePakThread, 6, thread6_rumble_loop, NULL, gThread6Stack + 0x2000, 30);
+    osCreateThread(&gRumblePakThread, THREAD6_RUMBLE, thread6_rumble_loop, NULL, gThread6Stack + 0x2000, 30);
     osStartThread(&gRumblePakThread);
 }
 

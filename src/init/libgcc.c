@@ -1,0 +1,377 @@
+/* --------------------------------------------------------------------------------*/
+/* Depending on the toolchain used, an appropriate precompiled libgcc library      */
+/* may not exist and cannot be linked against. Until we have a better work around, */
+/* necessary gcc functions are hosted here in order to properly compile.           */
+/* This file is NOT a part of the original game and only exists to help gcc work.  */
+/* --------------------------------------------------------------------------------*/
+
+// Frankenstein monster because GCC wants to ruin our lives.
+
+#include <ultra64.h>
+
+// Self-hosted libc memory functions, gcc assumes these exist even in a freestanding
+// environment and there is no way to tell it otherwise.
+
+void *memset(void *dest, int val, size_t len) {
+    unsigned char *ptr = dest;
+    while (len-- > 0)
+        *ptr++ = val;
+    return dest;
+}
+
+int memcmp(const void *s1, const void *s2, size_t n) {
+    const u8 *m1 = s1;
+    const u8 *m2 = s2;
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        if (m1[i] < m2[i]) {
+            return -1;
+        } else if (m1[i] > m2[i]) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+void *memmove(void *dest, const void *src, size_t len) {
+    char *d = dest;
+    const char *s = src;
+    if (d < s)
+        while (len--)
+            *d++ = *s++;
+    else {
+        char *lasts = (char *) s + (len - 1);
+        char *lastd = (char *) d + (len - 1);
+        while (len--)
+            *lastd-- = *lasts--;
+    }
+    return dest;
+}
+
+// Conversions involving 64-bit integer types required by the O32 MIPS ABI.
+
+// f32 -> u64, negative values become 0
+u64 __fixunssfdi(f32 a) {
+    if (a > 0.0f) {
+        register union {
+            f64 f;
+            u64 i;
+        } m;
+
+        __asm__("cvt.l.s %0, %1" : "=f"(m.f) : "f"(a));
+        return m.i;
+    }
+    return 0;
+}
+
+// f64 -> u64, negative values become 0
+u64 __fixunsdfdi(f64 a) {
+    if (a > 0.0) {
+        register union {
+            f64 f;
+            u64 i;
+        } m;
+
+        __asm__("cvt.l.d %0, %1" : "=f"(m.f) : "f"(a));
+        return m.i;
+    }
+    return 0;
+}
+
+// f32 -> s64
+s64 __fixsfdi(f32 c) {
+    register union {
+        f64 f;
+        s64 i;
+    } m;
+
+    __asm__("cvt.l.s %0, %1" : "=f"(m.f) : "f"(c));
+    return m.i;
+}
+
+// f64 -> s64
+s64 __fixdfdi(f64 c) {
+    register union {
+        f64 f;
+        s64 i;
+    } m;
+
+    __asm__("cvt.l.d %0, %1" : "=f"(m.f) : "f"(c));
+    return m.i;
+}
+
+// s64 -> f32
+f32 __floatdisf(s64 c) {
+    register union {
+        f64 f;
+        s64 i;
+    } m;
+    register f32 v;
+
+    m.i = c;
+    __asm__("cvt.s.l %0, %1" : "=f"(v) : "f"(m.f));
+    return v;
+}
+
+// s64 -> f64
+f64 __floatdidf(s64 c) {
+    register union {
+        f64 f;
+        s64 i;
+    } m;
+    register f64 v;
+
+    m.i = c;
+    __asm__("cvt.d.l %0, %1" : "=f"(v) : "f"(m.f));
+    return v;
+}
+
+// u64 -> f32
+f32 __floatundisf(u64 c) {
+    register union {
+        f64 f;
+        u64 i;
+    } m;
+    register f32 v;
+
+    m.i = c;
+    __asm__("cvt.s.l %0, %1" : "=f"(v) : "f"(m.f));
+    if ((s64) c < 0) {
+        // cvt.s.l assumes signed input, adjust output
+        v += 4294967296.0f; // 2^32
+    }
+    return v;
+}
+
+// u64 -> f64
+f64 __floatundidf(u64 c) {
+    register union {
+        f64 f;
+        u64 i;
+    } m;
+    register f64 v;
+
+    m.i = c;
+    __asm__("cvt.d.l %0, %1" : "=f"(v) : "f"(m.f));
+    if ((s64) c < 0) {
+        // cvt.d.l assumes signed input, adjust output
+        v += 18446744073709551616.0; // 2^64
+    }
+    return v;
+}
+
+// Compute x^m by binary exponentiation
+
+f32 __powisf2(f32 x, s32 m) {
+    u32 n = (m < 0) ? -m : m;
+    f32 y = (n % 2 != 0) ? x : 1.0f;
+
+    while (n >>= 1) {
+        x = x * x;
+
+        if (n % 2 != 0) {
+            y = y * x;
+        }
+    }
+    return (m < 0) ? (1.0f / y) : y;
+}
+
+int __ucmpdi2(unsigned long long a, unsigned long long b) {
+    if (a == b) {
+        return 1;
+    }
+    return (a < b) ? 0 : 2;
+}
+
+// Taken from LLVM
+
+typedef union {
+    u64 all;
+    struct {
+        u32 high;
+        u32 low;
+    } s;
+} UdWords;
+
+s64 __lshrdi3(s64 a, s32 b) {
+    const s32 bits_in_word = (s32)(sizeof(s32) * 8);
+    UdWords input;
+    UdWords result;
+    input.all = a;
+    if (b & bits_in_word)  /* bits_in_word <= b < bits_in_dword */ {
+        result.s.high = 0;
+        result.s.low = input.s.high >> (b - bits_in_word);
+    } else  /* 0 <= b < bits_in_word */ {
+        if (b == 0) {
+            return a;
+        }
+
+        result.s.high  = input.s.high >> b;
+        result.s.low = (input.s.high << (bits_in_word - b)) | (input.s.low >> b);
+    }
+    return result.all;
+}
+
+#define arith64_u64 unsigned long long int
+#define arith64_s64 signed long long int
+#define arith64_u32 unsigned int
+#define arith64_s32 int
+
+typedef union
+{
+    arith64_u64 u64;
+    arith64_s64 s64;
+    struct
+    {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        arith64_u32 hi; arith64_u32 lo;
+#else
+        arith64_u32 lo; arith64_u32 hi;
+#endif
+    } u32;
+    struct
+    {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        arith64_s32 hi; arith64_s32 lo;
+#else
+        arith64_s32 lo; arith64_s32 hi;
+#endif
+    } s32;
+} arith64_word;
+
+// extract hi and lo 32-bit words from 64-bit value
+#define arith64_hi(n) (arith64_word){.u64=n}.u32.hi
+#define arith64_lo(n) (arith64_word){.u64=n}.u32.lo
+
+// Negate a if b is negative, via invert and increment.
+#define arith64_neg(a, b) (((a) ^ ((((arith64_s64)(b)) >= 0) - 1)) + (((arith64_s64)(b)) < 0))
+#define arith64_abs(a) arith64_neg(a, a)
+
+// Return the absolute value of a.
+// Note LLINT_MIN cannot be negated.
+arith64_s64 __absvdi2(arith64_s64 a)
+{
+    return arith64_abs(a);
+}
+
+// Return the result of shifting a left by b bits.
+arith64_s64 __ashldi3(arith64_s64 a, int b)
+{
+    arith64_word w = {.s64 = a};
+
+    b &= 63;
+
+    if (b >= 32)
+    {
+        w.u32.hi = w.u32.lo << (b - 32);
+        w.u32.lo = 0;
+    } else if (b)
+    {
+        w.u32.hi = (w.u32.lo >> (32 - b)) | (w.u32.hi << b);
+        w.u32.lo <<= b;
+    }
+    return w.s64;
+}
+
+// Return the result of arithmetically shifting a right by b bits.
+arith64_s64 __ashrdi3(arith64_s64 a, int b)
+{
+    arith64_word w = {.s64 = a};
+
+    b &= 63;
+
+    if (b >= 32)
+    {
+        w.s32.lo = w.s32.hi >> (b - 32);
+        w.s32.hi >>= 31; // 0xFFFFFFFF or 0
+    } else if (b)
+    {
+        w.u32.lo = (w.u32.hi << (32 - b)) | (w.u32.lo >> b);
+        w.s32.hi >>= b;
+    }
+    return w.s64;
+}
+
+// Compute division and modulo of 64-bit signed and unsigned integers
+
+__asm__("                                   \n\
+    .set push                               \n\
+    .set noreorder                          \n\
+    .set gp=64                              \n\
+                                            \n\
+.global __umoddi3                           \n\
+__umoddi3:                                  \n\
+  .type __umoddi3, @function                \n\
+  .ent __umoddi3                            \n\
+    sw      $a0, 0x0($sp)                   \n\
+    sw      $a1, 0x4($sp)                   \n\
+    sw      $a2, 0x8($sp)                   \n\
+    sw      $a3, 0xC($sp)                   \n\
+    ld      $t6, 0($sp)                     \n\
+    ld      $t7, 8($sp)                     \n\
+    dremu   $v0, $t6, $t7                   \n\
+    dsll32  $v1, $v0, 0                     \n\
+    dsra32  $v1, $v1, 0                     \n\
+    jr      $ra                             \n\
+     dsra32 $v0, $v0, 0                     \n\
+  .end __umoddi3                            \n\
+  .size __umoddi3, . - __umoddi3            \n\
+                                            \n\
+.global __udivdi3                           \n\
+__udivdi3:                                  \n\
+  .type __udivdi3, @function                \n\
+  .ent __udivdi3                            \n\
+    sw      $a0, 0x0($sp)                   \n\
+    sw      $a1, 0x4($sp)                   \n\
+    sw      $a2, 0x8($sp)                   \n\
+    sw      $a3, 0xC($sp)                   \n\
+    ld      $t6, 0($sp)                     \n\
+    ld      $t7, 8($sp)                     \n\
+    ddivu   $v0, $t6, $t7                   \n\
+    dsll32  $v1, $v0, 0                     \n\
+    dsra32  $v1, $v1, 0                     \n\
+    jr      $ra                             \n\
+     dsra32 $v0, $v0, 0                     \n\
+  .end __udivdi3                            \n\
+  .size __udivdi3, . - __udivdi3            \n\
+                                            \n\
+.global __moddi3                            \n\
+__moddi3:                                   \n\
+  .type __moddi3, @function                 \n\
+  .ent __moddi3                             \n\
+    sw      $a0, 0x0($sp)                   \n\
+    sw      $a1, 0x4($sp)                   \n\
+    sw      $a2, 0x8($sp)                   \n\
+    sw      $a3, 0xC($sp)                   \n\
+    ld      $t6, 0($sp)                     \n\
+    ld      $t7, 8($sp)                     \n\
+    drem    $v0, $t6, $t7                   \n\
+    dsll32  $v1, $v0, 0                     \n\
+    dsra32  $v1, $v1, 0                     \n\
+    jr      $ra                             \n\
+     dsra32 $v0, $v0, 0                     \n\
+  .end __moddi3                             \n\
+  .size __moddi3, . - __moddi3              \n\
+                                            \n\
+.global __divdi3                            \n\
+__divdi3:                                   \n\
+  .type __divdi3, @function                 \n\
+  .ent __divdi3                             \n\
+    sw    $a0, 0x0($sp)                     \n\
+    sw    $a1, 0x4($sp)                     \n\
+    sw    $a2, 0x8($sp)                     \n\
+    sw    $a3, 0xC($sp)                     \n\
+    ld    $t6, 0($sp)                       \n\
+    ld    $t7, 8($sp)                       \n\
+    ddiv  $v0, $t6, $t7                     \n\
+    dsll32 $v1, $v0, 0                      \n\
+    dsra32 $v1, $v1, 0                      \n\
+    jr    $ra                               \n\
+     dsra32 $v0, $v0, 0                     \n\
+  .end __divdi3                             \n\
+  .size __divdi3, . - __divdi3              \n\
+                                            \n\
+    .set pop                                \n\
+                                            \n");

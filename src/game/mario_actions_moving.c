@@ -3,13 +3,13 @@
 #include "sm64.h"
 #include "mario.h"
 #include "audio/external.h"
-#include "engine/math_util.h"
-#include "engine/surface_collision.h"
+#include "math_util.h"
+#include "surface_collision.h"
 #include "mario_step.h"
 #include "area.h"
 #include "interaction.h"
 #include "mario_actions_object.h"
-#include "memory.h"
+#include "init/memory.h"
 #include "behavior_data.h"
 #include "rumble_init.h"
 
@@ -1285,7 +1285,7 @@ s32 act_crawling(struct MarioState *m) {
                 mario_set_forward_vel(m, 10.0f);
             }
             //! Possibly unintended missing break
-
+        // fall through
         case GROUND_STEP_NONE:
             align_with_floor(m);
             break;

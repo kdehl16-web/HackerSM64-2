@@ -10,10 +10,10 @@
 #include "mario_misc.h"
 #include "game_init.h"
 #include "hud.h"
-#include "engine/math_util.h"
+#include "game/math_util.h"
 #include "area.h"
-#include "engine/surface_collision.h"
-#include "engine/behavior_script.h"
+#include "game/surface_collision.h"
+#include "game/behavior_script.h"
 #include "level_update.h"
 #include "ingame_menu.h"
 #include "mario_actions_cutscene.h"
@@ -25,7 +25,7 @@
 #include "behavior_data.h"
 #include "object_list_processor.h"
 #include "paintings.h"
-#include "engine/graph_node.h"
+#include "game/graph_node.h"
 #include "level_table.h"
 
 #define CBUTTON_MASK (U_CBUTTONS | D_CBUTTONS | L_CBUTTONS | R_CBUTTONS)
@@ -1605,6 +1605,7 @@ s32 update_boss_fight_camera(struct Camera *c, Vec3f focus, Vec3f pos) {
             case AREA_BOB:
                 pos[1] += 125.f;
                 //! fall through, makes the BoB boss fight camera move up twice as high as it should
+            // fall through
             case AREA_WF:
                 pos[1] += 125.f;
         }

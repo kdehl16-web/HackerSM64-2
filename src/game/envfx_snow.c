@@ -1,16 +1,15 @@
 #include <ultra64.h>
-#include <prevent_bss_reordering.h>
 
 #include "sm64.h"
 #include "dialog_ids.h"
 #include "game_init.h"
-#include "memory.h"
+#include "init/memory.h"
 #include "ingame_menu.h"
 #include "envfx_snow.h"
 #include "envfx_bubbles.h"
-#include "engine/surface_collision.h"
-#include "engine/math_util.h"
-#include "engine/behavior_script.h"
+#include "surface_collision.h"
+#include "math_util.h"
+#include "behavior_script.h"
 #include "audio/external.h"
 #include "obj_behaviors.h"
 

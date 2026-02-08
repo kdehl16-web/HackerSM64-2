@@ -45,9 +45,11 @@ DECLARE_SEGMENT(framebuffers)
 extern u8 _goddardSegmentStart[];
 
 extern u8 _engineSegmentStart[];
-extern u8 _engineSegmentNoloadEnd[];
 extern u8 _engineSegmentEnd[];
 extern u8 _framebuffersSegmentNoloadEnd[];
+
+extern u8 _goddardSegmentNoloadStart[];
+extern u8 _goddardSegmentNoloadEnd[];
 
 DECLARE_LEVEL_SEGMENT(menu)
 DECLARE_LEVEL_SEGMENT(intro)
@@ -63,16 +65,9 @@ DECLARE_LEVEL_SEGMENT(ending)
 
 DECLARE_SEGMENT(segment2_mio0)
 
-DECLARE_SEGMENT(water_skybox_mio0)
-DECLARE_SEGMENT(ccm_skybox_mio0)
-DECLARE_SEGMENT(clouds_skybox_mio0)
-DECLARE_SEGMENT(bitfs_skybox_mio0)
-DECLARE_SEGMENT(wdw_skybox_mio0)
-DECLARE_SEGMENT(cloud_floor_skybox_mio0)
-DECLARE_SEGMENT(ssl_skybox_mio0)
-DECLARE_SEGMENT(bbh_skybox_mio0)
-DECLARE_SEGMENT(bidw_skybox_mio0)
-DECLARE_SEGMENT(bits_skybox_mio0)
+#define SKYBOX_SYMBOLS_ROM
+#include "skyboxes.h"
+#undef SKYBOX_SYMBOLS_ROM
 
 DECLARE_SEGMENT(fire_mio0)
 DECLARE_SEGMENT(spooky_mio0)

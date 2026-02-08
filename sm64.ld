@@ -17,13 +17,16 @@ SECTIONS
     {
         BUILD_DIR/asm/rom_header.o(.text);
         BUILD_DIR/asm/boot.o(.text);
+#ifndef LIBDRAGON_IPL3
         BUILD_DIR/asm/ipl3_font.o(.text);
+#endif
     }
     END_SEG(boot)
 
     . = 0x80000400;
     BEGIN_NOLOAD(zbuffer) {
         BUILD_DIR/src/buffers/zbuffer.o(.bss*);
+        . = ALIGN(0x10);
     }
     END_NOLOAD(zbuffer)
  
@@ -32,95 +35,99 @@ SECTIONS
     BEGIN_NOLOAD(buffers)
     {
         BUILD_DIR/src/buffers/buffers.o(.bss*);
-#ifdef VERSION_SH
-        AUDIO_DIR/port.o(.bss*);
-#endif
-        AUDIO_DIR/globals_start.o(.bss*);
-        AUDIO_DIR/synthesis.o(.bss*);
-        AUDIO_DIR/heap.o(.bss*);
-        AUDIO_DIR/load.o(.bss*);
-        AUDIO_DIR/data.o(.bss*);
-        AUDIO_DIR*.o(.bss*);
-
+        . = ALIGN(0x10);
         BUILD_DIR/src/buffers/gfx_output_buffer.o(.bss*);
+        . = ALIGN(0x10);
     }
     END_NOLOAD(buffers)
+
    . = _buffersSegmentNoloadEnd;
+
     BEGIN_SEG(main, .)
     {
         BUILD_DIR/asm/entry.o(.text);
-        BUILD_DIR/asm/decompress.o(.text);
-        BUILD_DIR/src/game*.o(.text);
+        BUILD_DIR/asm/decompress.o(.text*);
+        BUILD_DIR/asm/reboot.o(.text);
+        BUILD_DIR/src/init/dma_async.o(.text);
+        BUILD_DIR/src/init*.o(.text);
         AUDIO_DIR*.o(.text);
         ULTRA_BUILD_DIR/libgultra_rom.a:*.o(.text);
         BUILD_DIR/src/audio/external.o(.text);
+        BUILD_DIR/n64-libc.a:*.o(.text*);
+        BUILD_DIR/libpl2.a:*.o(.text);
         BUILD_DIR/lib/rsp.o(.text);
 
         BUILD_DIR/asm/entry.o(.data*);
         BUILD_DIR/asm/decompress.o(.data*);
-        BUILD_DIR/src/game*.o(.data*);
+        BUILD_DIR/asm/reboot.o(.data*);
+        BUILD_DIR/src/init/dma_async.o(.data);
+        BUILD_DIR/src/init*.o(.data*);
         AUDIO_DIR*.o(.data*);
         ULTRA_BUILD_DIR/libgultra_rom.a:*.o(.data*);
         BUILD_DIR/src/audio/external.o(.data*);
+        BUILD_DIR/n64-libc.a:*.o(.data*);
+        BUILD_DIR/libpl2.a:*.o(.data*);
         BUILD_DIR/lib/rsp.o(.data*);
-        
-	BUILD_DIR/asm/entry.o(.rodata*);
+
+        BUILD_DIR/asm/entry.o(.rodata*);
         BUILD_DIR/asm/decompress.o(.rodata*);
-        BUILD_DIR/src/game*.o(.rodata*);
+        BUILD_DIR/asm/reboot.o(.rodata*);
+        BUILD_DIR/src/init/dma_async.o(.rodata);
+        BUILD_DIR/src/init*.o(.rodata*);
         AUDIO_DIR*.o(.rodata*);
         ULTRA_BUILD_DIR/libgultra_rom.a:*.o(.rodata*);
         BUILD_DIR/src/audio/external.o(.rodata*);
+        BUILD_DIR/n64-libc.a:*.o(.rodata*);
+        BUILD_DIR/libpl2.a:*.o(.rodata*);
         BUILD_DIR/lib/rsp.o(.rodata*);
+#ifdef LIBDRAGON_IPL3
+        BUILD_DIR/src/game*.o(.text);
+        BUILD_DIR/src/game*.o(.data*);
+        BUILD_DIR/src/game*.o(.rodata*);
+#endif
+        . = ALIGN(0x10);
     }
     END_SEG(main)
 
     BEGIN_NOLOAD(main)
     {
-        BUILD_DIR/src/game*.o(.bss*);
-        BUILD_DIR/src/audio/external.o(.bss*);
+        BUILD_DIR/src/init*.o(.bss*);
         AUDIO_DIR*.o(.bss*);
+        BUILD_DIR/src/audio/external.o(.bss*);
+        BUILD_DIR/n64-libc.a:*.o(.bss*);
+        BUILD_DIR/libpl2.a:*.o(.bss*);
         ULTRA_BUILD_DIR/libgultra_rom.a:*.o(.bss*);
-
-        . = ALIGN(0x8);
+        BUILD_DIR/src/game*.o(.bss*);
+        . = ALIGN(0x10);
     }
     END_NOLOAD(main)
-
-#ifdef VERSION_CN
-    // Hack for CN to make these asm files to match, since we aren't using
-    // the original assembler and so can't get lui/ori from la pseudo
-
-    // asm/entry.s
-    CREATE_LO_HI_PAIR(_mainSegmentNoloadStart, ADDR (.main.noload))
-    CREATE_LO_HI_PAIR(gIdleThreadStack, gIdleThreadStack)
-    CREATE_LO_HI_PAIR(main_func, main_func)
-    
-    // asm/boot.s
-    SP_DMEM_CN_UNK0 = 0x0400049C;
-    SP_DMEM_CN_UNK1 = 0x0400074C;
-#endif
 
     CREATE_LO_HI_PAIR(_mainSegmentNoloadSize, SIZEOF (.main.noload))
     . = _mainSegmentNoloadEnd;
 
+#ifndef LIBDRAGON_IPL3
+    . = ALIGN(0x10);
+#else
+    . = ALIGN(0x40);
+#endif
+
+#ifndef LIBDRAGON_IPL3
     BEGIN_SEG(engine, .)
     {
-        BUILD_DIR/src/engine*.o(.text);
-        BUILD_DIR/src/engine*.o(.data*);
-        BUILD_DIR/src/engine*.o(.rodata*);
-        . = ALIGN(0x100);
+        BUILD_DIR/src/game*.o(.text);
+        BUILD_DIR/src/game*.o(.data*);
+        BUILD_DIR/src/game*.o(.rodata*);
+        . = ALIGN(0x40);
     }
     END_SEG(engine)
-    BEGIN_NOLOAD(engine)
-    {
-        BUILD_DIR/src/engine*.o(.bss*);
-    }
-    END_NOLOAD(engine)
 
-    . = _engineSegmentNoloadEnd;
+    . = _engineSegmentEnd;
+#endif
+
     BEGIN_NOLOAD(framebuffers)
     {
         BUILD_DIR/src/buffers/framebuffers.o(.bss*);
-        . = ALIGN(0x100);
+        . = ALIGN(0x10);
     }
     END_NOLOAD(framebuffers)
 
@@ -173,66 +180,47 @@ SECTIONS
     BEGIN_SEG(behavior, 0x13000000)
     {
         BUILD_DIR/data/behavior_data.o(.data);
+        . = ALIGN(0x10);
     }
     END_SEG(behavior)
 
-    /* 0x8016F000 21D7D0-255EC0 [386F0] */
+    BEGIN_SEG(gd_dynlists, 0x04000000)
+    {
+        EXCLUDE_FILE(BUILD_DIR/libgoddard.a:dynlist_proc.o)
+        BUILD_DIR/libgoddard.a:dynlist_*.o(.data*);
+        BUILD_DIR/libgoddard.a:dynlists_*.o(.data*);
+        BUILD_DIR/libgoddard.a:anim_*.o(.data*);
+        EXCLUDE_FILE(BUILD_DIR/libgoddard.a:dynlist_proc.o)
+        BUILD_DIR/libgoddard.a:dynlist_*.o(.rodata*);
+        BUILD_DIR/libgoddard.a:dynlists_*.o(.rodata*);
+        BUILD_DIR/libgoddard.a:anim_*.o(.rodata*);
+        . = ALIGN(0x10);
+    }
+    END_SEG(gd_dynlists)
+
     BEGIN_SEG(goddard, SEG_GODDARD)
     {
         BUILD_DIR/src/menu*.o(.text);
         BUILD_DIR/libgoddard.a:*.o(.text);
-        /* data, rodata, per file */
+        BUILD_DIR/libgoddard.a:dynlist_proc.o(.text);
         BUILD_DIR/src/menu*.o(.data*);
         BUILD_DIR/src/menu*.o(.rodata*);
-        /* goddard subsystem data */
-        BUILD_DIR/libgoddard.a:gd_main.o(.data*);
-        BUILD_DIR/libgoddard.a:draw_objects.o(.data*);
-        BUILD_DIR/libgoddard.a:objects.o(.data*);
-        BUILD_DIR/libgoddard.a:particles.o(.data*);
+        BUILD_DIR/libgoddard.a:*.o(.data*);
         BUILD_DIR/libgoddard.a:dynlist_proc.o(.data*);
-        BUILD_DIR/libgoddard.a:debug_utils.o(.data*);
-        BUILD_DIR/libgoddard.a:joints.o(.data*);
-        BUILD_DIR/libgoddard.a:shape_helper.o(.data*);
-        BUILD_DIR/libgoddard.a:renderer.o(.data*);
-        /* goddard subsystem rodata */
-        BUILD_DIR/libgoddard.a:gd_main.o(.rodata*);
-        BUILD_DIR/libgoddard.a:gd_memory.o(.rodata*);
-        BUILD_DIR/libgoddard.a:draw_objects.o(.rodata*);
-        BUILD_DIR/libgoddard.a:objects.o(.rodata*);
-        BUILD_DIR/libgoddard.a:skin_movement.o(.rodata*);
-        BUILD_DIR/libgoddard.a:particles.o(.rodata*);
+        BUILD_DIR/libgoddard.a:*.o(.rodata*);
         BUILD_DIR/libgoddard.a:dynlist_proc.o(.rodata*);
-        BUILD_DIR/libgoddard.a:old_menu.o(.rodata*);
-        BUILD_DIR/libgoddard.a:debug_utils.o(.rodata*);
-        BUILD_DIR/libgoddard.a:joints.o(.rodata*);
-        BUILD_DIR/libgoddard.a:skin.o(.rodata*);
-        BUILD_DIR/libgoddard.a:gd_math.o(.rodata*);
-        BUILD_DIR/libgoddard.a:shape_helper.o(.rodata*);
-        BUILD_DIR/libgoddard.a:renderer.o(.rodata*);
+        . = ALIGN(0x10);
     }
+
     END_SEG(goddard)
     BEGIN_NOLOAD(goddard)
     {
         BUILD_DIR/src/menu*.o(.bss*);
-        BUILD_DIR/libgoddard.a:gd_main.o(.bss*);
-        BUILD_DIR/libgoddard.a:gd_memory.o(.bss*);
-        BUILD_DIR/libgoddard.a:sfx.o(.bss*);
-        BUILD_DIR/libgoddard.a:draw_objects.o(.bss*);
-        BUILD_DIR/libgoddard.a:objects.o(.bss*);
-        BUILD_DIR/libgoddard.a:skin_movement.o(.bss*);
-        BUILD_DIR/libgoddard.a:particles.o(.bss*);
-        BUILD_DIR/libgoddard.a:dynlist_proc.o(.bss*);
-        BUILD_DIR/libgoddard.a:old_menu.o(.bss*);
-        BUILD_DIR/libgoddard.a:debug_utils.o(.bss*);
-        BUILD_DIR/libgoddard.a:joints.o(.bss*);
-        BUILD_DIR/libgoddard.a:skin.o(.bss*);
-        BUILD_DIR/libgoddard.a:shape_helper.o(.bss*);
-        BUILD_DIR/libgoddard.a:renderer.o(.bss*);
         BUILD_DIR/libgoddard.a:*.o(.bss*);
+        . = ALIGN(0x10);
     }
     END_NOLOAD(goddard)
 
-    /* 0x268020 0x268020-0 [0] */
     BEGIN_SEG(intro, 0x14000000)
     {
         BUILD_DIR/levels/intro/script.o(.data);
@@ -248,29 +236,6 @@ SECTIONS
 
     MIO0_SEG(debug_level_select, 0x07000000)
     MIO0_SEG(title_screen_bg, 0x0A000000)
-
-    /* 271B20-2A42A0 [32780] */
-    BEGIN_SEG(gd_dynlists, 0x04000000)
-    {
-        BUILD_DIR/libgoddard.a:dynlist_test_cube.o(.data);
-        BUILD_DIR/libgoddard.a:dynlist_unused.o(.data);
-        BUILD_DIR/libgoddard.a:dynlist_mario_face.o(.data);
-        BUILD_DIR/libgoddard.a:dynlists_mario_eyes.o(.data);
-        BUILD_DIR/libgoddard.a:dynlists_mario_eyebrows_mustache.o(.data);
-        BUILD_DIR/libgoddard.a:dynlist_mario_master.o(.data);
-        BUILD_DIR/libgoddard.a:anim_mario_mustache_right.o(.data);
-        BUILD_DIR/libgoddard.a:anim_mario_mustache_left.o(.data);
-        BUILD_DIR/libgoddard.a:anim_mario_lips_1.o(.data);
-        BUILD_DIR/libgoddard.a:anim_mario_lips_2.o(.data);
-        BUILD_DIR/libgoddard.a:anim_mario_eyebrows_1.o(.data);
-        BUILD_DIR/libgoddard.a:anim_group_1.o(.data);
-        BUILD_DIR/libgoddard.a:anim_group_2.o(.data);
-        BUILD_DIR/libgoddard.a:dynlist_test_cube.o(.rodata*);
-        BUILD_DIR/libgoddard.a:dynlist_unused.o(.rodata*);
-        BUILD_DIR/libgoddard.a:*.o(.data);
-        BUILD_DIR/libgoddard.a:*.o(.rodata);
-    }
-    END_SEG(gd_dynlists)
 
     gMainLevels = __romPos;
 
@@ -293,16 +258,9 @@ SECTIONS
     }
     END_SEG(scripts)
 
-    MIO0_SEG(water_skybox, 0x0A000000)
-    MIO0_SEG(ccm_skybox, 0x0A000000)
-    MIO0_SEG(clouds_skybox, 0x0A000000)
-    MIO0_SEG(bitfs_skybox, 0x0A000000)
-    MIO0_SEG(wdw_skybox, 0x0A000000)
-    MIO0_SEG(cloud_floor_skybox, 0x0A000000)
-    MIO0_SEG(ssl_skybox, 0x0A000000)
-    MIO0_SEG(bbh_skybox, 0x0A000000)
-    MIO0_SEG(bidw_skybox, 0x0A000000)
-    MIO0_SEG(bits_skybox, 0x0A000000)
+#define SKYBOX_LD
+#include "skyboxes.h"
+#undef SKYBOX_LD
 
     // Texture bins
     MIO0_SEG(fire, 0x09000000)
@@ -327,7 +285,6 @@ SECTIONS
 #undef STUB_LEVEL
 #undef DEFINE_LEVEL
 
-    /* 4E9FA0-? [?] */
     BEGIN_SEG(assets, __romPos)
     {
         BUILD_DIR/assets/mario_anim_data.o(.data);
@@ -337,6 +294,40 @@ SECTIONS
     }
     END_SEG(assets)
 
+   /* DWARF debug sections.
+      Symbols in the DWARF debugging sections are relative to the beginning
+      of the section so we begin them at 0.  */
+   .debug_rnglists 0 : { *(.debug_rnglists) }
+   .debug_line_str 0 : { *(.debug_line_str) }
+   /* DWARF 1 */
+   .debug          0 : { *(.debug) }
+   .line           0 : { *(.line) }
+   /* GNU DWARF 1 extensions */
+   .debug_srcinfo  0 : { *(.debug_srcinfo) }
+   .debug_sfnames  0 : { *(.debug_sfnames) }
+   /* DWARF 1.1 and DWARF 2 */
+   .debug_aranges  0 : { *(.debug_aranges) }
+   .debug_pubnames 0 : { *(.debug_pubnames) }
+   /* DWARF 2 */
+   .debug_info     0 : { *(.debug_info .gnu.linkonce.wi.*) }
+   .debug_abbrev   0 : { *(.debug_abbrev) }
+   .debug_line     0 : { *(.debug_line .debug_line.* .debug_line_end ) }
+   .debug_frame    0 : { *(.debug_frame) }
+   .debug_str      0 : { *(.debug_str) }
+   .debug_loc      0 : { *(.debug_loc) }
+   .debug_macinfo  0 : { *(.debug_macinfo) }
+   /* SGI/MIPS DWARF 2 extensions */
+   .debug_weaknames 0 : { *(.debug_weaknames) }
+   .debug_funcnames 0 : { *(.debug_funcnames) }
+   .debug_typenames 0 : { *(.debug_typenames) }
+   .debug_varnames  0 : { *(.debug_varnames) }
+   /* DWARF 3 */
+   .debug_pubtypes 0 : { *(.debug_pubtypes) }
+   .debug_ranges   0 : { *(.debug_ranges) }
+   /* DWARF Extension.  */
+   .debug_macro    0 : { *(.debug_macro) }
+   .gnu.attributes 0 : { KEEP (*(.gnu.attributes)) }
+
     /* Discard everything not specifically mentioned above. */
     /DISCARD/ :
     {
@@ -344,7 +335,11 @@ SECTIONS
     }
 
     ASSERT((_goddardSegmentNoloadEnd <= SEG_POOL_START + POOL_SIZE), "Error: menu segment extended past pool end")
+#ifndef LIBDRAGON_IPL3
     ASSERT((_mainSegmentNoloadEnd <= _engineSegmentStart), "Error: main segment extended into engine.")
-    ASSERT((_engineSegmentNoloadEnd <= _framebuffersSegmentNoloadStart), "Error: engine segment extended into framebuffers.")
+    ASSERT((_engineSegmentEnd <= _framebuffersSegmentNoloadStart), "Error: engine segment extended into framebuffers.")
+#else
+    ASSERT((_mainSegmentNoloadEnd <= _framebuffersSegmentNoloadStart), "Error: main segment extended into framebuffers.")
+#endif
     ASSERT((_framebuffersSegmentNoloadEnd <= RAM_END), "Error: framebuffers segment extended past RDRAM end")
 }

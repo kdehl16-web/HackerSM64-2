@@ -1,14 +1,14 @@
 // Blue Fish
 
 // 0x0301B5C8
-static const Lights1 blue_fish_seg3_lights_0301B5C8 = gdSPDefLights1(
+ALIGNED8 static const Lights1 blue_fish_seg3_lights_0301B5C8 = gdSPDefLights1(
     0x3f, 0x3f, 0x3f,
     0xff, 0xff, 0xff, 0x28, 0x28, 0x28
 );
 
 // 0x0301B5E0
 ALIGNED8 static const Texture blue_fish_seg3_texture_0301B5E0[] = {
-#include "actors/blue_fish/blue_fish.rgba16.inc.c"
+#embed "actors/blue_fish/blue_fish.rgba16.bin"
 };
 
 // 0x0301BDE0
