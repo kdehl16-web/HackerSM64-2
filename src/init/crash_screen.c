@@ -2,10 +2,25 @@
 #include <stdarg.h>
 #include <string.h>
 
+#include "cfg/crash.h"
+
+#include "main.h"
+#include "game/game_init.h"
+#include "reboot.h"
+
 #include "sm64.h"
 
 #include "PR/os_internal.h"
 #include "lib/hackerlibultra/src/libc/xstdio.h"
+#include "n64-libc.h"
+
+#include "audio/external.h"
+#include "sounds.h"
+#include "seq_ids.h"
+
+extern u32 gGlobalTimer;
+
+char *assertMsg = NULL;
 
 u8 gCrashScreenCharToGlyph[128] = {
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -17,10 +32,9 @@ u8 gCrashScreenCharToGlyph[128] = {
 };
 
 // A height of seven pixels for each Character * nine rows of characters + one row unused.
-u32 gCrashScreenFont[7 * 9 + 1] = {
-    #include "textures/crash_screen/crash_screen_font.ia1.inc.c"
+ALIGNED8 u8 gCrashScreenFont[] = {
+    #embed "textures/crash_screen/crash_screen_font.ia1.bin"
 };
-
 
 char *gCauseDesc[18] = {
     "Interrupt",
@@ -48,8 +62,6 @@ char *gFpcsrDesc[6] = {
     "Inexact operation",
 };
 
-
-
 extern u64 osClockRate;
 
 struct {
@@ -62,6 +74,20 @@ struct {
     u16 height;
 } gCrashScreen;
 
+void crash_screen_draw_bg() {
+    u16 *ptr;
+    s32 i, j;
+
+    ptr = gCrashScreen.framebuffer + gCrashScreen.width;
+    for (i = 0; i < SCREEN_HEIGHT; i++) {
+        for (j = 0; j < SCREEN_WIDTH; j++) {
+            *ptr = (*ptr >> 1 & 0x7bde) | 0x21;
+            ptr++;
+        }
+        ptr += gCrashScreen.width - SCREEN_WIDTH;
+    }
+}
+
 void crash_screen_draw_rect(s32 x, s32 y, s32 w, s32 h) {
     u16 *ptr;
     s32 i, j;
@@ -69,8 +95,7 @@ void crash_screen_draw_rect(s32 x, s32 y, s32 w, s32 h) {
     ptr = gCrashScreen.framebuffer + gCrashScreen.width * y + x;
     for (i = 0; i < h; i++) {
         for (j = 0; j < w; j++) {
-            // 0xe738 = 0b1110011100111000
-            *ptr = ((*ptr & 0xe738) >> 2) | 1;
+            *ptr = 0x0001;
             ptr++;
         }
         ptr += gCrashScreen.width - w;
@@ -78,23 +103,26 @@ void crash_screen_draw_rect(s32 x, s32 y, s32 w, s32 h) {
 }
 
 void crash_screen_draw_glyph(s32 x, s32 y, s32 glyph) {
-    const u32 *data;
+    const u8 *data;
     u16 *ptr;
     u32 bit;
     u32 rowMask;
     s32 i, j;
 
-    data = &gCrashScreenFont[glyph / 5 * 7];
+    data = &gCrashScreenFont[(glyph / 5) * 7 * 4];
     ptr = gCrashScreen.framebuffer + gCrashScreen.width * y + x;
 
     for (i = 0; i < 7; i++) {
+        rowMask = ((u32)data[0] << 24) | ((u32)data[1] << 16) |
+                  ((u32)data[2] << 8) | ((u32)data[3]);
+        data += 4;
         bit = 0x80000000U >> ((glyph % 5) * 6);
-        rowMask = *data++;
 
         for (j = 0; j < 6; j++) {
-            *ptr++ = (bit & rowMask) ? 0xffff : 1;
+            *ptr++ = (rowMask & bit) ? 0xffff : 1;
             bit >>= 1;
         }
+
         ptr += gCrashScreen.width - 6;
     }
 }
@@ -112,7 +140,7 @@ void crash_screen_print(s32 x, s32 y, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
 
-    size = _Printf((void*)write_to_buf, buf, fmt, args);
+    size = _Printf((void *) write_to_buf, buf, fmt, args);
 
     if (size > 0) {
         ptr = buf;
@@ -129,6 +157,11 @@ void crash_screen_print(s32 x, s32 y, const char *fmt, ...) {
 
             ptr++;
             x += 6;
+
+            if (x >= 285) {
+                x = 30;
+                y += 10;
+            }
         }
     }
 
@@ -150,8 +183,10 @@ void crash_screen_print_float_reg(s32 x, s32 y, s32 regNum, void *addr) {
     exponent = ((bits & 0x7f800000U) >> 0x17) - 0x7f;
     if ((exponent >= -0x7e && exponent <= 0x7f) || bits == 0) {
         crash_screen_print(x, y, "F%02d:%.3e", regNum, *(f32 *) addr);
+        n64_printf("F%02d: %.3e  ", regNum, *(f32 *) addr);
     } else {
         crash_screen_print(x, y, "F%02d:---------", regNum);
+        n64_printf("F%02d: ---------  ", regNum);
     }
 }
 
@@ -161,13 +196,16 @@ void crash_screen_print_fpcsr(u32 fpcsr) {
 
     bit = 1 << 17;
     crash_screen_print(30, 155, "FPCSR:%08XH", fpcsr);
+    n64_printf("FPCSR: %08XH", fpcsr);
     for (i = 0; i < 6; i++) {
         if (fpcsr & bit) {
             crash_screen_print(132, 155, "(%s)", gFpcsrDesc[i]);
+            n64_printf(" - (%s)\n\n", gFpcsrDesc[i]);
             return;
         }
         bit >>= 1;
     }
+    n64_printf("\n\n");
 }
 
 void draw_crash_screen(OSThread *thread) {
@@ -182,12 +220,30 @@ void draw_crash_screen(OSThread *thread) {
         cause = 17;
     }
 
-    osWritebackDCacheAll();
+    // disable reading AA coverage to prevent text being illegible
+
+#if defined(VERSION_US) || defined(VERSION_SH) || defined(VERSION_CN)
+    if (osTvType == OS_TV_NTSC) {
+        osViSetMode(&osViModeTable[OS_VI_NTSC_LPN1]);
+    } else {
+        osViSetMode(&osViModeTable[OS_VI_PAL_LPN1]);
+    }
+#elif defined(VERSION_JP)
+    osViSetMode(&osViModeTable[OS_VI_NTSC_LPN1]);
+#else // VERSION_EU
+    osViSetMode(&osViModeTable[OS_VI_PAL_LPN1]);
+#endif
+
+    osViSetSpecialFeatures(OS_VI_DITHER_FILTER_OFF);
+    osViSetSpecialFeatures(OS_VI_GAMMA_OFF); // automatically re-enabled from vi mode change
 
     crash_screen_draw_rect(25, 20, 270, 25);
+    osWritebackDCacheAll();
     crash_screen_print(30, 25, "THREAD:%d  (%s)", thread->id, gCauseDesc[cause]);
     crash_screen_print(30, 35, "PC:%08XH   SR:%08XH   VA:%08XH", tc->pc, tc->sr, tc->badvaddr);
-    crash_screen_sleep(2000);
+    n64_printf("=================== CRASH ===================\n");
+    n64_printf("THREAD: %d  (%s)\n", thread->id, gCauseDesc[cause]);
+    n64_printf("PC: %08XH   SR: %08XH   VA: %08XH\n\n", tc->pc, tc->sr, tc->badvaddr);
     crash_screen_draw_rect(25, 45, 270, 185);
     crash_screen_print(30, 50, "AT:%08XH   V0:%08XH   V1:%08XH", (u32) tc->at, (u32) tc->v0,
                        (u32) tc->v1);
@@ -208,25 +264,53 @@ void draw_crash_screen(OSThread *thread) {
     crash_screen_print(30, 130, "T9:%08XH   GP:%08XH   SP:%08XH", (u32) tc->t9, (u32) tc->gp,
                        (u32) tc->sp);
     crash_screen_print(30, 140, "S8:%08XH   RA:%08XH", (u32) tc->s8, (u32) tc->ra);
+
+    // unfortunately, i could not get the crash screen print func
+    // to pass on the arguments to n64_printf without crashing the crash screen...
+
+    n64_printf("AT: %08XH   V0: %08XH   V1: %08XH\n", (u32) tc->at, (u32) tc->v0, (u32) tc->v1);
+    n64_printf("A0: %08XH   A1: %08XH   A2: %08XH\n", (u32) tc->a0, (u32) tc->a1, (u32) tc->a2);
+    n64_printf("A3: %08XH   T0: %08XH   T1: %08XH\n", (u32) tc->a3, (u32) tc->t0, (u32) tc->t1);
+    n64_printf("T2: %08XH   T3: %08XH   T4: %08XH\n", (u32) tc->t2, (u32) tc->t3, (u32) tc->t4);
+    n64_printf("T5: %08XH   T6: %08XH   T7: %08XH\n", (u32) tc->t5, (u32) tc->t6, (u32) tc->t7);
+    n64_printf("S0: %08XH   S1: %08XH   S2: %08XH\n", (u32) tc->s0, (u32) tc->s1, (u32) tc->s2);
+    n64_printf("S3: %08XH   S4: %08XH   S5: %08XH\n", (u32) tc->s3, (u32) tc->s4, (u32) tc->s5);
+    n64_printf("S6: %08XH   S7: %08XH   T8: %08XH\n", (u32) tc->s6, (u32) tc->s7, (u32) tc->t8);
+    n64_printf("T9: %08XH   GP: %08XH   SP: %08XH\n", (u32) tc->t9, (u32) tc->gp, (u32) tc->sp);
+    n64_printf("S8: %08XH   RA: %08XH\n\n", (u32) tc->s8, (u32) tc->ra);
+
     crash_screen_print_fpcsr(tc->fpcsr);
     crash_screen_print_float_reg(30, 170, 0, &tc->fp0.f.f_even);
     crash_screen_print_float_reg(120, 170, 2, &tc->fp2.f.f_even);
     crash_screen_print_float_reg(210, 170, 4, &tc->fp4.f.f_even);
+    n64_printf("\n");
     crash_screen_print_float_reg(30, 180, 6, &tc->fp6.f.f_even);
     crash_screen_print_float_reg(120, 180, 8, &tc->fp8.f.f_even);
     crash_screen_print_float_reg(210, 180, 10, &tc->fp10.f.f_even);
+    n64_printf("\n");
     crash_screen_print_float_reg(30, 190, 12, &tc->fp12.f.f_even);
     crash_screen_print_float_reg(120, 190, 14, &tc->fp14.f.f_even);
     crash_screen_print_float_reg(210, 190, 16, &tc->fp16.f.f_even);
+    n64_printf("\n");
     crash_screen_print_float_reg(30, 200, 18, &tc->fp18.f.f_even);
     crash_screen_print_float_reg(120, 200, 20, &tc->fp20.f.f_even);
     crash_screen_print_float_reg(210, 200, 22, &tc->fp22.f.f_even);
+    n64_printf("\n");
     crash_screen_print_float_reg(30, 210, 24, &tc->fp24.f.f_even);
     crash_screen_print_float_reg(120, 210, 26, &tc->fp26.f.f_even);
     crash_screen_print_float_reg(210, 210, 28, &tc->fp28.f.f_even);
+    n64_printf("\n");
     crash_screen_print_float_reg(30, 220, 30, &tc->fp30.f.f_even);
+    n64_printf("\n");
+    n64_printf("=============================================\n");
     osViBlack(FALSE);
-    osViSwapBuffer(gCrashScreen.framebuffer);
+    crash_screen_sleep(2500);
+    if (assertMsg != NULL) {
+        crash_screen_draw_rect(25, 45, 270, 185);
+        n64_printf(assertMsg);
+        crash_screen_print(30, 50, assertMsg);
+    }
+    play_music(SEQ_PLAYER_LEVEL, SEQ_LEVEL_BOSS_KOOPA, 0);
 }
 
 OSThread *get_crashed_thread(void) {
@@ -253,26 +337,50 @@ void thread2_crash_screen(UNUSED void *arg) {
         osRecvMesg(&gCrashScreen.mesgQueue, &mesg, 1);
         thread = get_crashed_thread();
     } while (thread == NULL);
+
+#ifdef CFG_CRASH_REBOOT
+    reboot(osRomType, osTvType, osResetType, 0x3F);
+    __builtin_unreachable();
+#endif
+
+    if (thread->id == 5 || thread->id == 6) { // only care about this if game or rumble crashes
+        gCrashScreen.thread.priority = 15;
+        sound_reset(0);
+        play_music(SEQ_PLAYER_LEVEL, SEQ_EVENT_KOOPA_MESSAGE, 0);
+        crash_screen_sleep(2000);
+        play_sound(SOUND_MENU_BOWSER_LAUGH, gGlobalSoundSource);
+        audio_signal_game_loop_tick();
+    }
+
+    crash_screen_draw_bg();
+    osWritebackDCacheAll();
     draw_crash_screen(thread);
-    for (;;) {
+
+    while (TRUE) {
+        if (gControllerBits) {
+#if ENABLE_RUMBLE
+            block_until_rumble_pak_free();
+#endif
+            osContStartReadData(&gSIEventMesgQueue);
+        }
+        read_controller_inputs(2);
+        if (gPlayer1Controller->buttonPressed) {
+            reboot(osRomType, osTvType, osResetType, 0x3F);
+        }
     }
 }
 
 void crash_screen_set_framebuffer(u16 *framebuffer, u16 width, u16 height) {
-    gCrashScreen.framebuffer = (u16 *)((uintptr_t)framebuffer | 0xa0000000);
+    gCrashScreen.framebuffer = (u16 *) ((uintptr_t) framebuffer | 0xa0000000);
     gCrashScreen.width = width;
     gCrashScreen.height = height;
 }
 
 void crash_screen_init(void) {
-    gCrashScreen.framebuffer = (u16 *) (osMemSize | 0xA0000000) - SCREEN_WIDTH * SCREEN_HEIGHT;
     gCrashScreen.width = SCREEN_WIDTH;
     gCrashScreen.height = 0x10;
     osCreateMesgQueue(&gCrashScreen.mesgQueue, &gCrashScreen.mesg, 1);
-    osCreateThread(
-        &gCrashScreen.thread, 2, thread2_crash_screen, NULL,
-        (u8 *) gCrashScreen.stack + sizeof(gCrashScreen.stack),
-        OS_PRIORITY_RMON
-    );
+    osCreateThread(&gCrashScreen.thread, THREAD2_FAULT, thread2_crash_screen, NULL,
+                   (u8 *) gCrashScreen.stack + sizeof(gCrashScreen.stack), OS_PRIORITY_RMON);
     osStartThread(&gCrashScreen.thread);
 }

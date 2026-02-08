@@ -10,6 +10,7 @@
 #include "init/memory.h"
 
 #define GFX_POOL_SIZE 6400 // Size of how large the master display list (gDisplayListHead) can be
+#define MASTERDL gDisplayListHead++
 
 struct GfxPool {
     Gfx buffer[GFX_POOL_SIZE];
@@ -64,6 +65,7 @@ extern u8 gDemoInputs[];
 extern u16 sRenderingFramebuffer;
 extern u32 gGlobalTimer;
 
+void read_controller_inputs(s32 thread);
 void setup_game_memory(void);
 void thread5_game_loop(UNUSED void *arg);
 void clear_framebuffer(s32 color);

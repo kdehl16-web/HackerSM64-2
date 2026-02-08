@@ -5,6 +5,7 @@
 #include "gfx_dimensions.h"
 #include "game_init.h"
 #include "init/memory.h"
+#include "rgfx_hud.h"
 #include "print.h"
 #include "segment2.h"
 
@@ -366,13 +367,13 @@ s8 char_to_glyph_index(char c) {
 void add_glyph_texture(s8 glyphIndex) {
     const u8 *const *glyphs = segmented_to_virtual(main_hud_lut);
 
-    gDPPipeSync(gDisplayListHead++);
+    gDPPipeSync(MASTERDL);
 #ifdef VERSION_CN
-    gDPSetTextureImage(gDisplayListHead++, G_IM_FMT_RGBA, G_IM_SIZ_16b, 1, glyphs[(u8) glyphIndex]);
+    gDPSetTextureImage(MASTERDL, G_IM_FMT_RGBA, G_IM_SIZ_16b, 1, glyphs[(u8) glyphIndex]);
 #else
-    gDPSetTextureImage(gDisplayListHead++, G_IM_FMT_RGBA, G_IM_SIZ_16b, 1, glyphs[glyphIndex]);
+    gDPSetTextureImage(MASTERDL, G_IM_FMT_RGBA, G_IM_SIZ_16b, 1, glyphs[glyphIndex]);
 #endif
-    gSPDisplayList(gDisplayListHead++, dl_hud_img_load_tex_block);
+    gSPDisplayList(MASTERDL, dl_hud_img_load_tex_block);
 }
 
 #ifndef WIDESCREEN
@@ -401,6 +402,7 @@ void clip_to_bounds(s32 *x, s32 *y) {
 /**
  * Renders the glyph that's set at the given position.
  */
+
 #ifdef VERSION_CN
 void render_textrect(s32 x, s32 y, s32 pos, s32 width) {
     s32 rectBaseX = x + pos * width;
@@ -418,7 +420,7 @@ void render_textrect(s32 x, s32 y, s32 pos) {
 #endif
     rectX = rectBaseX;
     rectY = rectBaseY;
-    gSPTextureRectangle(gDisplayListHead++, rectX << 2, rectY << 2, (rectX + 15) << 2,
+    gSPTextureRectangle(MASTERDL, rectX << 2, rectY << 2, (rectX + 15) << 2,
                         (rectY + 15) << 2, G_TX_RENDERTILE, 0, 0, 4 << 10, 1 << 10);
 }
 
@@ -430,25 +432,19 @@ void render_text_labels(void) {
     s32 i;
     s32 j;
     s8 glyphIndex;
-    Mtx *mtx;
 
     if (sTextLabelsCount == 0) {
         return;
     }
 
-    mtx = alloc_display_list(sizeof(*mtx));
-
-    if (mtx == NULL) {
-        sTextLabelsCount = 0;
-        return;
-    }
-
-    guOrtho(mtx, 0.0f, SCREEN_WIDTH, 0.0f, SCREEN_HEIGHT, -10.0f, 10.0f, 1.0f);
-    gSPPerspNormalize((Gfx *) (gDisplayListHead++), 0xFFFF);
-    gSPMatrix(gDisplayListHead++, VIRTUAL_TO_PHYSICAL(mtx), G_MTX_PROJECTION | G_MTX_LOAD | G_MTX_NOPUSH);
-    gSPDisplayList(gDisplayListHead++, dl_hud_img_begin);
+    gSPDisplayList(MASTERDL, dl_hud_img_begin);
 
     for (i = 0; i < sTextLabelsCount; i++) {
+        gDPSetAlphaCompare(MASTERDL, G_AC_NONE);
+        gDPSetCycleType(MASTERDL, G_CYC_1CYCLE);
+        clear_cvg(sTextLabels[i]->x - 2, 226 - sTextLabels[i]->y, sTextLabels[i]->x + (sTextLabels[i]->length * 12) + 3, 242 - sTextLabels[i]->y);
+        gDPSetCycleType(MASTERDL, G_CYC_COPY);
+        gDPSetAlphaCompare(MASTERDL, G_AC_THRESHOLD);
         for (j = 0; j < sTextLabels[i]->length; j++) {
 #ifdef VERSION_CN
             if ((u8) sTextLabels[i]->buffer[j] < 0xA0) {
@@ -519,7 +515,6 @@ void render_text_labels(void) {
         mem_pool_free(gEffectsMemoryPool, sTextLabels[i]);
     }
 
-    gSPDisplayList(gDisplayListHead++, dl_hud_img_end);
-
+    gSPDisplayList(MASTERDL, dl_hud_img_end);
     sTextLabelsCount = 0;
 }

@@ -9,10 +9,54 @@ default: all
 # WARNING: This CAN and WILL break certain (most) emulators.
 # Use if you care about console or ares boot times.
 
-LIBDRAGON_IPL3 := 0
+LIBDRAGON_IPL3 ?= 0
+
+# Build types
+# debug   - Debug build
+# general - General release build
+
+RELEASE ?= debug
+
+# Benchmark build
+# Builds a benchmark build that runs a 120 star TAS for automated verification.
+# This setting is also in include/cfg/benchmark.h, but provided here as well for automation purposes.
+
+BENCHMARK ?= 0
+
+# VERSION - selects the version of the game to build
+#   jp - builds the 1996 Japanese version
+#   us - builds the 1996 North American version
+#   eu - builds the 1997 PAL version
+#   sh - builds the 1997 Japanese Shindou version, with rumble pak support
+#   cn - builds the 2003 Chinese iQue version
+
+VERSION ?= us
+
+# GRUCODE - selects which RSP microcode to use.
+#   f3d_old - default for JP and US versions
+#   f3d_new - default for EU and Shindou versions
+#   f3dex   -
+#   f3dex2  -
+#   f3dzex  - newer version of the f3dex2 microcode used in Animal Crossing
+
+GRUCODE   ?= f3dex
 
 # Preprocessor definitions
 DEFINES :=
+
+ifeq ($(BENCHMARK), 1)
+	DEFINES += CFG_BENCHMARK=1
+  RELEASE = general
+endif
+
+ifeq ($(RELEASE), debug)
+  OPT_FLAGS := -Og -ggdb3
+  DEFINES +=  _DEBUG=1
+else ifeq ($(RELEASE), general)
+  OPT_FLAGS := -Os -ggdb3
+else
+  $(error Invalid build release setting.)
+endif
 
 ifeq ($(LIBDRAGON_IPL3), 1)
   DEFINES += LIBDRAGON_IPL3=1
@@ -31,47 +75,28 @@ TARGET_N64 ?= 1
 COMPILER ?= gcc
 $(eval $(call validate-option,COMPILER, gcc))
 
-
-# VERSION - selects the version of the game to build
-#   jp - builds the 1996 Japanese version
-#   us - builds the 1996 North American version
-#   eu - builds the 1997 PAL version
-#   sh - builds the 1997 Japanese Shindou version, with rumble pak support
-#   cn - builds the 2003 Chinese iQue version
-VERSION ?= us
 $(eval $(call validate-option,VERSION,jp us eu sh cn))
 
 ifeq      ($(VERSION),jp)
   DEFINES   += VERSION_JP=1
-  GRUCODE   ?= f3dex
   AUDIO_SRC_DIR  ?= src/audio/us_jp
 else ifeq ($(VERSION),us)
   DEFINES   += VERSION_US=1
-  GRUCODE   ?= f3dex
   AUDIO_SRC_DIR  ?= src/audio/us_jp
 else ifeq ($(VERSION),eu)
   DEFINES   += VERSION_EU=1
-  GRUCODE   ?= f3dex
   AUDIO_SRC_DIR  ?= src/audio/eu
 else ifeq ($(VERSION),sh)
   DEFINES   += VERSION_SH=1
-  GRUCODE   ?= f3dex
   AUDIO_SRC_DIR  ?= src/audio/sh
 else ifeq ($(VERSION),cn)
   DEFINES   += VERSION_CN=1
-  GRUCODE   ?= f3dex
+
   AUDIO_SRC_DIR  ?= src/audio/sh
 endif
 
 TARGET := sm64.$(VERSION)
 
-
-# GRUCODE - selects which RSP microcode to use.
-#   f3d_old - default for JP and US versions
-#   f3d_new - default for EU and Shindou versions
-#   f3dex   -
-#   f3dex2  -
-#   f3dzex  - newer, experimental microcode used in Animal Crossing
 $(eval $(call validate-option,GRUCODE,f3d_old f3dex f3dex2 f3d_new f3dzex))
 
 ifeq      ($(GRUCODE),f3d_old)
@@ -87,17 +112,9 @@ else ifeq ($(GRUCODE),f3dzex) # Fast3DZEX (2.0J / Animal Forest - Dōbutsu no Mo
   DEFINES += F3DZEX_GBI_2=1 F3DEX_GBI_2=1 F3DEX_GBI_SHARED=1
 endif
 
-NON_MATCHING := 1
 MIPSISET     := -mips3
-OPT_FLAGS    := -Os
 
-
-# NON_MATCHING - whether to build a matching, identical copy of the ROM
-#   1 - enable some alternate, more portable code that does not produce a matching ROM
-#   0 - build a matching ROM
-NON_MATCHING ?= 0
-$(eval $(call validate-option,NON_MATCHING,0 1))
-
+NON_MATCHING := 1
 ifeq ($(TARGET_N64),0)
   NON_MATCHING := 1
 endif
@@ -140,6 +157,7 @@ ifeq ($(filter clean distclean,$(MAKECMDGOALS)),)
   else
     $(info IPL:            Nintendo IPL3)
   endif
+  $(info Build type:     $(RELEASE))
   $(info =======================)
 endif
 
@@ -187,7 +205,7 @@ ifeq ($(filter clean distclean print-%,$(MAKECMDGOALS)),)
     endif
 
   $(info Building hackerlibultra...)
-  DUMMY != $(MAKE) -s -C $(LIBULTRA_DIR) >&2 || echo FAIL
+	DUMMY != $(MAKE) -s -C $(LIBULTRA_DIR) VERSION=L >&2 || echo FAIL # We must specify version, or else hackerlibultra will make a build folder for SM64 game version (i.e. build/US/libgultra_rom.a)
     ifeq ($(DUMMY),FAIL)
       $(error Failed to build hackerlibultra)
     endif
@@ -219,6 +237,8 @@ SRC_DIRS := src src/game src/init src/menu src/buffers src/audio $(AUDIO_SRC_DIR
 BIN_DIRS := bin bin/$(VERSION)
 
 GODDARD_SRC_DIRS := src/goddard src/goddard/dynlists
+N64LIBC_SRC_DIRS := lib/n64-libc
+LIBPL2_SRC_DIRS  := lib/libpl2
 
 # File dependencies and variables for specific files
 include Makefile.split
@@ -228,6 +248,8 @@ LEVEL_C_FILES     := $(wildcard levels/*/leveldata.c) $(wildcard levels/*/script
 C_FILES           := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c)) $(LEVEL_C_FILES)
 S_FILES           := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.s))
 GODDARD_C_FILES   := $(foreach dir,$(GODDARD_SRC_DIRS),$(wildcard $(dir)/*.c))
+N64LIBC_C_FILES   := $(foreach dir,$(N64LIBC_SRC_DIRS),$(wildcard $(dir)/*.c))
+LIBPL2_C_FILES    := $(foreach dir,$(LIBPL2_SRC_DIRS),$(wildcard $(dir)/*.c))
 GENERATED_C_FILES := $(BUILD_DIR)/assets/mario_anim_data.c $(BUILD_DIR)/assets/demo_data.c
 
 # Sound files
@@ -254,9 +276,11 @@ O_FILES := $(foreach file,$(C_FILES),$(BUILD_DIR)/$(file:.c=.o)) \
            $(foreach file,$(GENERATED_C_FILES),$(file:.c=.o))
 
 GODDARD_O_FILES := $(foreach file,$(GODDARD_C_FILES),$(BUILD_DIR)/$(file:.c=.o))
+N64LIBC_O_FILES := $(foreach file,$(N64LIBC_C_FILES),$(BUILD_DIR)/$(file:.c=.o))
+LIBPL2_O_FILES  := $(foreach file,$(LIBPL2_C_FILES),$(BUILD_DIR)/$(file:.c=.o))
 
 # Automatic dependency files
-DEP_FILES := $(O_FILES:.o=.d) $(GODDARD_O_FILES:.o=.d) $(BUILD_DIR)/$(LD_SCRIPT).d
+DEP_FILES := $(O_FILES:.o=.d) $(GODDARD_O_FILES:.o=.d) $(N64LIBC_O_FILES:.o=.d) $(LIBPL2_O_FILES:.o=.d) $(BUILD_DIR)/$(LD_SCRIPT).d
 
 #==============================================================================#
 # Compiler Options                                                             #
@@ -281,7 +305,7 @@ ifeq ($(TARGET_N64),1)
   CC_CFLAGS := -fno-builtin
 endif
 
-INCLUDE_DIRS := include $(BUILD_DIR) $(BUILD_DIR)/include src .
+INCLUDE_DIRS := include $(BUILD_DIR) $(BUILD_DIR)/include src lib/n64-libc lib/libpl2 .
 ifeq ($(TARGET_N64),1)
   INCLUDE_DIRS += include/gcc
 endif
@@ -299,12 +323,12 @@ else
 endif
 
 # C compiler options
-CFLAGS = -G 0 $(TARGET_CFLAGS) $(DEF_INC_CFLAGS)
-CFLAGS += -mno-shared -march=vr4300 -mfix4300 -mabi=32 -mhard-float -mdivide-breaks -fno-stack-protector -fno-common -fno-zero-initialized-in-bss -fno-PIC -mno-abicalls -fno-strict-aliasing -fno-inline-functions -ffreestanding -fwrapv -Wall -Wextra
-CFLAGS += -Wno-missing-braces
+CFLAGS = -G 0 $(TARGET_CFLAGS) $(DEF_INC_CFLAGS) $(foreach i,$(INCLUDE_DIRS),--embed-dir=$(i))
+CFLAGS += -std=gnu23 -fno-inline -Wno-unused-variable -mno-shared -march=vr4300 -mfix4300 -mabi=32 -mhard-float -mdivide-breaks -fno-unsafe-math-optimizations -fno-stack-protector -fno-common -fno-zero-initialized-in-bss -fno-PIC -mno-abicalls -fno-strict-aliasing -ffreestanding -fwrapv -Wall -Wextra
+CFLAGS += -Wno-missing-braces -Wno-maybe-uninitialized
 
 ASFLAGS     := -march=vr4300 -mabi=32 $(foreach i,$(INCLUDE_DIRS),-I$(i)) $(foreach d,$(DEFINES),--defsym $(d))
-ASMFLAGS := -G 0 $(OPT_FLAGS) $(TARGET_CFLAGS) -mips3 $(DEF_INC_CFLAGS) -mno-shared -march=vr4300 -mfix4300 -mabi=32 -mhard-float -mdivide-breaks -fno-stack-protector -fno-common -fno-zero-initialized-in-bss -fno-PIC -mno-abicalls -fno-strict-aliasing -fno-inline-functions -ffreestanding -fwrapv -Wall -Wextra
+ASMFLAGS := -G 0 $(OPT_FLAGS) $(TARGET_CFLAGS) -mips3 $(DEF_INC_CFLAGS) -mno-shared -march=vr4300 -mfix4300 -mabi=32 -mhard-float -mdivide-breaks -fno-stack-protector -fno-common -fno-zero-initialized-in-bss -fno-PIC -mno-abicalls -fno-strict-aliasing -ffreestanding -fwrapv -Wall -Wextra
 RSPASMFLAGS := $(foreach d,$(DEFINES),-definelabel $(subst =, ,$(d)))
 
 # Prevent a crash with -sopt
@@ -372,7 +396,7 @@ distclean: clean
 	$(PYTHON) extract_assets.py --clean
 	$(MAKE) -C $(TOOLS_DIR) clean
 	$(MAKE) -C $(TOOLS_DIR)/sm64tools clean
-	$(MAKE) -C $(LIBULTRA_DIR) clean
+	$(MAKE) -C $(LIBULTRA_DIR) distclean
 
 test: $(ROM)
 	$(EMULATOR) $(EMU_FLAGS) $<
@@ -389,7 +413,7 @@ $(BUILD_DIR)/levels/scripts.o:        $(BUILD_DIR)/include/level_headers.h
 
 $(BUILD_DIR)/src/audio/sh/load.o: $(SOUND_BIN_DIR)/bank_sets.inc.c $(SOUND_BIN_DIR)/sequences_header.inc.c $(SOUND_BIN_DIR)/ctl_header.inc.c $(SOUND_BIN_DIR)/tbl_header.inc.c
 
-$(CRASH_TEXTURE_C_FILES): TEXTURE_ENCODING := u32
+$(CRASH_TEXTURE_C_FILES): TEXTURE_ENCODING := raw
 
 ifeq ($(VERSION),eu)
   TEXT_DIRS := text/de text/us text/fr
@@ -415,7 +439,7 @@ else
 endif
 $(BUILD_DIR)/bin/segment2.o: $(BUILD_DIR)/text/debug_text.raw.inc.c
 
-ALL_DIRS := $(BUILD_DIR) $(addprefix $(BUILD_DIR)/,$(SRC_DIRS) $(GODDARD_SRC_DIRS) $(ULTRA_SRC_DIRS) $(BIN_DIRS) $(TEXTURE_DIRS) $(TEXT_DIRS) $(SOUND_SAMPLE_DIRS) $(addprefix levels/,$(LEVEL_DIRS)) rsp include) $(MIO0_DIR) $(addprefix $(MIO0_DIR)/,$(VERSION)) $(SOUND_BIN_DIR) $(SOUND_BIN_DIR)/sequences/$(VERSION)
+ALL_DIRS := $(BUILD_DIR) $(addprefix $(BUILD_DIR)/,$(SRC_DIRS) $(GODDARD_SRC_DIRS) $(N64LIBC_SRC_DIRS) $(LIBPL2_SRC_DIRS) $(ULTRA_SRC_DIRS) $(BIN_DIRS) $(TEXTURE_DIRS) $(TEXT_DIRS) $(SOUND_SAMPLE_DIRS) $(addprefix levels/,$(LEVEL_DIRS)) rsp include) $(MIO0_DIR) $(addprefix $(MIO0_DIR)/,$(VERSION)) $(SOUND_BIN_DIR) $(SOUND_BIN_DIR)/sequences/$(VERSION)
 
 # Make sure build directory exists before compiling anything
 DUMMY != mkdir -p $(ALL_DIRS)
@@ -429,14 +453,14 @@ $(BUILD_DIR)/src/game/ingame_menu.o: $(BUILD_DIR)/include/text_strings.h
 #==============================================================================#
 # Texture Generation                                                           #
 #==============================================================================#
-TEXTURE_ENCODING := u8
+TEXTURE_ENCODING := raw
 
 # Convert PNGs to RGBA32, RGBA16, IA16, IA8, IA4, IA1, I8, I4 binary files
 $(BUILD_DIR)/%: %.png
 	$(call print,Converting:,$<,$@)
 	$(V)$(N64GRAPHICS) -s raw -i $@ -g $< -f $(lastword $(subst ., ,$@))
 
-$(BUILD_DIR)/%.inc.c: %.png
+$(BUILD_DIR)/%.bin: %.png
 	$(call print,Converting:,$<,$@)
 	$(V)$(N64GRAPHICS) -s $(TEXTURE_ENCODING) -i $@ -g $< -f $(lastword ,$(subst ., ,$(basename $<)))
 
@@ -612,13 +636,23 @@ $(BUILD_DIR)/$(LD_SCRIPT): $(LD_SCRIPT)
 
 # Link libgoddard
 $(BUILD_DIR)/libgoddard.a: $(GODDARD_O_FILES)
-	@$(PRINT) "$(GREEN)Linking libgoddard:  $(BLUE)$@ $(NO_COL)\n"
+	@$(PRINT) "$(GREEN)Archiving libgoddard:  $(BLUE)$@ $(NO_COL)\n"
 	$(V)$(AR) rcs -o $@ $(GODDARD_O_FILES)
 
+# Bundle n64-libc
+$(BUILD_DIR)/n64-libc.a: $(N64LIBC_O_FILES)
+	@$(PRINT) "$(GREEN)Bundling n64-libc:  $(BLUE)$@ $(NO_COL)\n"
+	$(V)$(AR) rcs -o $@ $(N64LIBC_O_FILES)
+
+# Bundle libpl2
+$(BUILD_DIR)/libpl2.a: $(LIBPL2_O_FILES)
+	@$(PRINT) "$(GREEN)Bundling libpl2:  $(BLUE)$@ $(NO_COL)\n"
+	$(V)$(AR) rcs -o $@ $(LIBPL2_O_FILES)
+
 # Link SM64 ELF file
-$(ELF): $(LIBULTRA_BUILD_DIR)/libgultra_rom.a $(O_FILES) $(MIO0_OBJ_FILES) $(SEG_FILES) $(BUILD_DIR)/$(LD_SCRIPT) $(BUILD_DIR)/libgoddard.a
+$(ELF): $(LIBULTRA_BUILD_DIR)/libgultra_rom.a $(O_FILES) $(MIO0_OBJ_FILES) $(SEG_FILES) $(BUILD_DIR)/$(LD_SCRIPT) $(BUILD_DIR)/libgoddard.a $(BUILD_DIR)/n64-libc.a $(BUILD_DIR)/libpl2.a
 	@$(PRINT) "$(GREEN)Linking ELF file:  $(BLUE)$@ $(NO_COL)\n"
-	$(V)$(LD) -L $(BUILD_DIR) -L $(LIBULTRA_BUILD_DIR) -T $(BUILD_DIR)/$(LD_SCRIPT) -Map $(BUILD_DIR)/sm64.$(VERSION).map --no-check-sections $(addprefix -R ,$(SEG_FILES)) -o $@ $(O_FILES) -lgultra_rom -lgoddard
+	$(V)$(LD) -L $(BUILD_DIR) -L $(LIBULTRA_BUILD_DIR) -T $(BUILD_DIR)/$(LD_SCRIPT) -Map $(BUILD_DIR)/sm64.$(VERSION).map --no-check-sections $(addprefix -R ,$(SEG_FILES)) -o $@ $(O_FILES) -lpl2 -l:n64-libc.a -lgoddard -lgultra_rom
 
 # Build ROM
   PAD_TO_GAP_FILL := --pad-to=0x800000 --gap-fill=0xFF
