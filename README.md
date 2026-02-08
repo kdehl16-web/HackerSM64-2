@@ -30,7 +30,7 @@ We recommend either Debian or Ubuntu 18.04 Linux distributions under WSL.
 Note: WSL1 does not currently support Ubuntu 20.04.
 
 Next, clone the SM64 repo from within the Linux shell:
-`git clone https://github.com/HackerN64/ultrasm64-2.git`
+`git clone https://github.com/kdehl16-web/HackerSM64-2.git`
 
 Then continue following the directions in the [Linux](#linux) installation section below.
 
